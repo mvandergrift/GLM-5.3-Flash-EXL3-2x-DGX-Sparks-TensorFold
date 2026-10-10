@@ -79,8 +79,8 @@ GHCR_IMAGE="${GHCR_IMAGE:-ghcr.io/miaai-lab/glm-5.3-flash-exl3-2x-dgx-sparks-ten
 # cannot) while patches/*.patch and IMAGE_EXTRAS still hash to IMAGE_TAG's hash. Other patches pull
 # $GHCR_IMAGE:<TF_VERSION>-<hash> when one is published, else build locally. scripts/publish-image.sh prints both.
 # The same image serves two and three Sparks.
-IMAGE_TAG="${IMAGE_TAG:-v0.6.0-e66c657a433d}"
-IMAGE_DIGEST="${IMAGE_DIGEST:-sha256:14b5072e8e9918f1080153f57321415a387bc7d78cf9c9b44a7aeae2d4399ccf}"
+IMAGE_TAG="${IMAGE_TAG:-v0.6.0-18179058e618}"
+IMAGE_DIGEST="${IMAGE_DIGEST:-}"   # 0109: set to the digest scripts/publish-image.sh prints
 # the registry reference prepare.sh pulls for these patches: the pinned digest, or the hash's tag
 prebuilt_image() {
   local tag="${TF_VERSION}-$(image_hash)"
@@ -233,6 +233,13 @@ export TF_GLM_CLEAR_THINKING="${TF_GLM_CLEAR_THINKING:-0}"
 # check the effort levels still answer differently (tools/toolcheck.py, tools/end_of_turn.py) before relying on it.
 # Not a request field: it changes every thinking-on prompt, and every rank reads it with the other TF_GLM_* switches.
 export TF_GLM_EFFORT_TAIL="${TF_GLM_EFFORT_TAIL:-0}"
+# With thinking on, a chat that ends on a tool result (an agent's next step) tends to close its think block at once:
+# "</think>" first, reasoning_tokens 1, and the next call or answer comes without reasoning. 1 (patch 0109, the
+# default): the generation prompt gets a short user turn just before "<|assistant|><think>" asking for an assessment of
+# the result in the think block (technigmaai/glm-5.3-flash-gb10-tp2-native#3's reminder). Only that prompt carries it,
+# so each next step prefills the last step's reply and results again. A request's
+# chat_template_kwargs.tool_reasoning_reminder (true / false) wins. 0: the checkpoint's prompt, as before.
+export TF_GLM_TOOL_REMINDER="${TF_GLM_TOOL_REMINDER:-1}"
 # Admission at saturation (patch 0075): past the lanes plus MAX_QUEUED a foreground request is refused with
 # 429 + Retry-After (529 overloaded_error through the Anthropic bridge) instead of queueing invisibly. Unset
 # queues as every scheduler always has; 0 refuses anything past the lanes. A single-instance deployment with

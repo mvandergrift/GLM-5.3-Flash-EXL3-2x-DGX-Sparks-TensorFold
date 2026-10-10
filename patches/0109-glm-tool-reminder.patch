@@ -1,0 +1,113 @@
+# TF_GLM_TOOL_REMINDER (default 1): when thinking is on and a chat ends on a tool result, GLM-5.3 tends to close its
+# think block at once ("</think>" first, reasoning_tokens 1, empty reasoning_content) and answer or call the next tool
+# without reasoning: "the reasoning disappears in agent loops". The generation prompt then gets a short user turn just
+# before "<|assistant|><think>" asking for an assessment of the result in the think block. The text and condition are
+# technigmaai/glm-5.3-flash-gb10-tp2-native#3's (a template change there; here a post-render step, as patch 0096's),
+# so the prompt is byte-identical to theirs. Only the generation prompt carries it: the chat's history renders as
+# before, and the next turn re-prefills from the reminder on (the last step's reply and the new results).
+# chat_template_kwargs.tool_reasoning_reminder=false turns it off for a request (true turns it on under
+# TF_GLM_TOOL_REMINDER=0). Thinking off, a chat that ends on any other message, and /tokenize without the generation
+# prompt render as before. GlmTokenizer and the CUDA server's template both honour it. CPU test: tools/test_tool_reminder.py.
+
+diff --git tensorfold/families/glm5_next/prompts.py tensorfold/families/glm5_next/prompts.py
+--- tensorfold/families/glm5_next/prompts.py
++++ tensorfold/families/glm5_next/prompts.py
+@@ -104,6 +104,40 @@
+     return (head.group(1) or "") + rest[:-len(OPENED)] + head.group(2) + OPENED
+ 
+ 
++# technigmaai/glm-5.3-flash-gb10-tp2-native#3's reminder, verbatim
++TOOL_REMINDER = ("<|user|>Continue the original task using the latest tool result. Before your next answer or tool "
++                 "call, briefly assess the result in the thinking block. Keep that assessment separate from the "
++                 "user-facing answer.")
++
++
++def tool_reminder_enabled() -> bool:
++    """``TF_GLM_TOOL_REMINDER`` (default 1): a chat that ends on a tool result is asked to think before it goes on."""
++
++    value = os.environ.get("TF_GLM_TOOL_REMINDER", "1").strip() or "1"
++    if value not in ("0", "1"):
++        raise ValueError(f"TF_GLM_TOOL_REMINDER={value!r}: expected 0 or 1")
++    return value == "1"
++
++
++def _ends_on_tool(messages: Any) -> bool:
++    return isinstance(messages, list) and bool(messages) and isinstance(messages[-1], dict) \
++        and messages[-1].get("role") == "tool"
++
++
++def tool_reminder(text: str, messages: Any, thinking: bool, asked: Any = None) -> str:
++    """The checkpoint text with a user turn asking for an assessment in the think block just before the generation
++    prompt, when thinking is on and the chat ends on a tool result: there GLM-5.3 tends to close the block at once
++    (``</think>`` first, no reasoning). ``asked`` is the request's ``chat_template_kwargs.tool_reasoning_reminder``:
++    true or false, anything else the server's TF_GLM_TOOL_REMINDER. Only the generation prompt carries it, so the chat
++    renders as before on the next turn. Text not ending in the opened think block is returned as is."""
++
++    if not thinking or not text.endswith(OPENED) or not _ends_on_tool(messages):
++        return text
++    if not (asked if isinstance(asked, bool) else tool_reminder_enabled()):
++        return text
++    return text[:-len(OPENED)] + TOOL_REMINDER + OPENED
++
++
+ def thinking_off(text: str) -> str:
+     """The checkpoint text as the thinking-off template renders it: no effort line, an empty think block."""
+ 
+@@ -123,10 +157,12 @@
+     def apply_chat_template(self, messages: Any, *args: Any, tokenize: bool = True, **kwargs: Any) -> Any:
+         messages = agent_history(messages)
+         thinking = kwargs.get("enable_thinking", True) is not False
++        asked = kwargs.pop("tool_reasoning_reminder", None)
+         tail = effort_tail_enabled()
+-        if thinking and not tail:
++        if thinking and not tail and not _ends_on_tool(messages):
+             return self._inner.apply_chat_template(messages, *args, tokenize=tokenize, **kwargs)
+         text = self._inner.apply_chat_template(messages, *args, tokenize=False, **kwargs)
++        text = tool_reminder(text, messages, thinking, asked)
+         if tail:
+             text = effort_to_tail(text, thinking)
+         if not thinking:
+diff --git tensorfold/families/glm5_next/cuda/app.py tensorfold/families/glm5_next/cuda/app.py
+--- tensorfold/families/glm5_next/cuda/app.py
++++ tensorfold/families/glm5_next/cuda/app.py
+@@ -9,14 +9,16 @@
+ from tensorfold.cuda.server import App, PreparedRequest, RequestError
+ from tensorfold.server.errors import CONTEXT_LIMIT
+ from tensorfold.families.glm5_next.cuda.kept_reasoning import KeptReasoning
+-from tensorfold.families.glm5_next.prompts import agent_history, effort_tail_enabled, effort_to_tail, thinking_off
++from tensorfold.families.glm5_next.prompts import (agent_history, effort_tail_enabled, effort_to_tail, thinking_off,
++                                                   tool_reminder, tool_reminder_enabled)
+ 
+ 
+ class ThinkingOffTemplate:
+     """The checkpoint's chat template, rendered as GLM-5.3's thinking-off template renders it when thinking is off
+     (``prompts.thinking_off``, as the Mac's tokenizer renders it), an agent's history made renderable first
+     (``prompts.agent_history``), with the reasoning of tool-calling steps the client dropped put back (``kept``,
+-    ``kept_reasoning.KeptReasoning``; None: off)."""
++    ``kept_reasoning.KeptReasoning``; None: off) and, when it ends on a tool result, a reminder to think first
++    (``prompts.tool_reminder``)."""
+ 
+     def __init__(self, inner, kept: KeptReasoning | None = None, clear_thinking: bool = False) -> None:
+         self.inner = inner
+@@ -29,8 +31,12 @@
+             messages = self.kept.restore(messages)
+         # earlier turns keep their reasoning unless the request says otherwise, as in zai-org's current template
+         extra = {"clear_thinking": self.clear_thinking, **(extra or {})}
+-        text = self.inner.render(agent_history(messages), tools=tools, enable_thinking=enable_thinking, extra=extra,
++        asked = extra.pop("tool_reasoning_reminder", None)
++        messages = agent_history(messages)
++        text = self.inner.render(messages, tools=tools, enable_thinking=enable_thinking, extra=extra,
+                                  allow_images=allow_images)
++        # TF_GLM_TOOL_REMINDER (default 1): after a tool result, asked to think before it answers or calls again
++        text = tool_reminder(text, messages, bool(enable_thinking), asked)
+         if effort_tail_enabled():       # TF_GLM_EFFORT_TAIL=1 (issue #93): the effort line goes last, not first
+             text = effort_to_tail(text, bool(enable_thinking))
+         return text if enable_thinking else thinking_off(text)
+@@ -70,6 +76,7 @@
+         if clear not in ("0", "1"):
+             raise ValueError(f"TF_GLM_CLEAR_THINKING={clear!r}: expected 0 or 1")
+         effort_tail_enabled()       # a typo fails at load, not at the first request
++        tool_reminder_enabled()
+         self.template = ThinkingOffTemplate(self.template, KeptReasoning.from_env(), clear_thinking=clear == "1")
+ 
+     def check(self, body: dict[str, Any], *, prepared: PreparedRequest | None = None) -> str | None:

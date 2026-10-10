@@ -168,6 +168,10 @@ checkpoint's ShapleyMcg attribution and the drafter's license).
   `TF_GLM_KEEP_PER_CHAT`): authored by Thomas Wade ([ThomasWadeZ](https://github.com/ThomasWadeZ)) in
   [PR #65](https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold/pull/65) (Apache 2.0); rebased
   onto the current patches, with both limits off by default and their drops kept out of the spill tier, by MiaAI-Lab.
+- `0109-glm-tool-reminder` (a reminder to reason after a tool result, `TF_GLM_TOOL_REMINDER`): the approach, its
+  condition and the reminder's text are those of [technigmaai](https://github.com/technigmaai)'s
+  [pull request #3](https://github.com/technigmaai/glm-5.3-flash-gb10-tp2-native/pull/3) to
+  glm-5.3-flash-gb10-tp2-native (a chat-template change there); the code here is our own.
 - Every patch, except the parts credited above: by MiaAI-Lab, developed with
   [Claude Code](https://claude.com/claude-code), under the Apache License 2.0; the TensorFold code the patches modify or
   quote as context stays under TensorFold's licenses (Apache 2.0, and MIT for code written before v0.6.0; see

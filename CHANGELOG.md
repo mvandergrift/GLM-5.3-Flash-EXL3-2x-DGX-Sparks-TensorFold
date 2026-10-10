@@ -5,6 +5,18 @@ Every change to this recipe, newest first. Each release names the image it serve
 
 ## Unreleased
 
+- **Reasoning after tool results** (patch `0109-glm-tool-reminder`, `TF_GLM_TOOL_REMINDER=1` by default): with thinking
+  on, a chat that ends on a tool result (every agent step after the first) tended to close its think block at once:
+  `</think>` first, `reasoning_tokens` 1, empty `reasoning_content`, and the next call or answer without reasoning
+  ("the reasoning disappears in the agent loop"). The generation prompt now gets a short user turn just before
+  `<|assistant|><think>` asking for an assessment of the result in the think block: the reminder and condition of
+  [technigmaai/glm-5.3-flash-gb10-tp2-native#3](https://github.com/technigmaai/glm-5.3-flash-gb10-tp2-native/pull/3),
+  a template change there and a post-render step here (beside `0096`'s), so the prompt text is the same. Only that
+  prompt carries it, never the history: each next step prefills the last step's reply and results again.
+  `chat_template_kwargs.tool_reasoning_reminder=false` turns it off for a request (`true` on under
+  `TF_GLM_TOOL_REMINDER=0`); thinking off and chats ending on any other message render as before. `GlmTokenizer` and
+  the CUDA server's template both honour it. CPU test (in CI): `tools/test_tool_reminder.py`; live A/B with the
+  next step's `cached_tokens`: `tools/tool_reasoning_check.py`.
 - **A prompt that fills beside other replies, ~10-14% sooner** (`FILL_ROWS`, by [BadAd84](https://github.com/BadAd84)):
   while other requests decode, a new prompt filled in 1,024-row chunks (TensorFold's `TF_GLM_FILL_ROWS` default),
   half the 2,048-row prompt chunk whose buffers the engine keeps anyway. `scripts/config.sh` now sets 2,048 (at
