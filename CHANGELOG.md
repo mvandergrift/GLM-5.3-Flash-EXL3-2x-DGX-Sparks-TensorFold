@@ -16,7 +16,12 @@ Every change to this recipe, newest first. Each release names the image it serve
   `chat_template_kwargs.tool_reasoning_reminder=false` turns it off for a request (`true` on under
   `TF_GLM_TOOL_REMINDER=0`); thinking off and chats ending on any other message render as before. `GlmTokenizer` and
   the CUDA server's template both honour it. CPU test (in CI): `tools/test_tool_reminder.py`; live A/B with the
-  next step's `cached_tokens`: `tools/tool_reasoning_check.py`.
+  next step's `cached_tokens`: `tools/tool_reasoning_check.py`. Two Sparks, the reported loop (four calls made, the
+  last message a tool result, tools declared, temperature 0): reminder off, `reasoning_tokens` 1 and the call
+  without reasoning at 759 and 314,990 prompt tokens; on, 152 / 111 reasoning tokens before the same `tool_4` call
+  (1.5 -> 3.0 s at 759 tokens), and the next step 463 / 461 (a summary at the short size, `tool_5` at the long
+  one). The next step prefilled 284 of 988 and 234 of 315,178 tokens again (the reply, the new result, the
+  reminder), 8.6 s for the whole step at ~315k; the reminder's extra cost is the reasoning the model now writes.
 - **A prompt that fills beside other replies, ~10-14% sooner** (`FILL_ROWS`, by [BadAd84](https://github.com/BadAd84)):
   while other requests decode, a new prompt filled in 1,024-row chunks (TensorFold's `TF_GLM_FILL_ROWS` default),
   half the 2,048-row prompt chunk whose buffers the engine keeps anyway. `scripts/config.sh` now sets 2,048 (at
