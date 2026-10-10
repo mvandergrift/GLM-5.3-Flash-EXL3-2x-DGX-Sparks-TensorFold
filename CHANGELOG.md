@@ -5,7 +5,7 @@ Every change to this recipe, newest first. Each release names the image it serve
 
 ## Unreleased
 
-- **Reasoning after tool results** (patch `0109-glm-tool-reminder`, `TF_GLM_TOOL_REMINDER=1` by default): with thinking
+- **Reasoning after tool results** (patch `0109-glm-tool-reminder`, opt-in `TF_GLM_TOOL_REMINDER=1`): with thinking
   on, a chat that ends on a tool result (every agent step after the first) tended to close its think block at once:
   `</think>` first, `reasoning_tokens` 1, empty `reasoning_content`, and the next call or answer without reasoning
   ("the reasoning disappears in the agent loop"). The generation prompt now gets a short user turn just before
@@ -22,6 +22,12 @@ Every change to this recipe, newest first. Each release names the image it serve
   (1.5 -> 3.0 s at 759 tokens), and the next step 463 / 461 (a summary at the short size, `tool_5` at the long
   one). The next step prefilled 284 of 988 and 234 of 315,178 tokens again (the reply, the new result, the
   reminder), 8.6 s for the whole step at ~315k; the reminder's extra cost is the reasoning the model now writes.
+  **Off by default** (`scripts/config.sh`): the model reads the reminder as a new user instruction. A code-review
+  agent (5 reviews x 10 runs, sampled) went on to fix the defects it found, or to comment on the PR, in every run
+  with a medium or high defect and half of those with only low ones; without the reminder it never did.
+  `tools/tool_reasoning_check.py --loop` runs the loop itself with each step's reasoning returned, dropped
+  (`reasoning_content: ""`, which the kept reasoning of `0036` puts back) and dropped with a system prompt that
+  changes every step (where the kept reasoning is never found), to show where the reasoning goes.
 - **A prompt that fills beside other replies, ~10-14% sooner** (`FILL_ROWS`, by [BadAd84](https://github.com/BadAd84)):
   while other requests decode, a new prompt filled in 1,024-row chunks (TensorFold's `TF_GLM_FILL_ROWS` default),
   half the 2,048-row prompt chunk whose buffers the engine keeps anyway. `scripts/config.sh` now sets 2,048 (at

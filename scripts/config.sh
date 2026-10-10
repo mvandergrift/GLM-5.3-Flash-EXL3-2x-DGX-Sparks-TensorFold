@@ -233,13 +233,15 @@ export TF_GLM_CLEAR_THINKING="${TF_GLM_CLEAR_THINKING:-0}"
 # check the effort levels still answer differently (tools/toolcheck.py, tools/end_of_turn.py) before relying on it.
 # Not a request field: it changes every thinking-on prompt, and every rank reads it with the other TF_GLM_* switches.
 export TF_GLM_EFFORT_TAIL="${TF_GLM_EFFORT_TAIL:-0}"
-# With thinking on, a chat that ends on a tool result (an agent's next step) tends to close its think block at once:
-# "</think>" first, reasoning_tokens 1, and the next call or answer comes without reasoning. 1 (patch 0109, the
-# default): the generation prompt gets a short user turn just before "<|assistant|><think>" asking for an assessment of
-# the result in the think block (technigmaai/glm-5.3-flash-gb10-tp2-native#3's reminder). Only that prompt carries it,
-# so each next step prefills the last step's reply and results again. A request's
-# chat_template_kwargs.tool_reasoning_reminder (true / false) wins. 0: the checkpoint's prompt, as before.
-export TF_GLM_TOOL_REMINDER="${TF_GLM_TOOL_REMINDER:-1}"
+# With thinking on, a chat that ends on a tool result (an agent's next step) can close its think block at once:
+# "</think>" first, reasoning_tokens 1, the next call or answer without reasoning. 1 (patch 0109): the generation
+# prompt gets a short user turn just before "<|assistant|><think>" asking for an assessment of the result in the think
+# block (technigmaai/glm-5.3-flash-gb10-tp2-native#3's reminder). Off by default: it restores the reasoning, but the
+# model reads it as a new user instruction and goes past what it was asked (a code-review agent fixing the defects or
+# commenting on the PR, where it stopped at the review without it). A request's
+# chat_template_kwargs.tool_reasoning_reminder (true / false) wins. tools/tool_reasoning_check.py --loop shows where
+# the reasoning goes without it (an agent that drops each step's reasoning).
+export TF_GLM_TOOL_REMINDER="${TF_GLM_TOOL_REMINDER:-0}"
 # Admission at saturation (patch 0075): past the lanes plus MAX_QUEUED a foreground request is refused with
 # 429 + Retry-After (529 overloaded_error through the Anthropic bridge) instead of queueing invisibly. Unset
 # queues as every scheduler always has; 0 refuses anything past the lanes. A single-instance deployment with
